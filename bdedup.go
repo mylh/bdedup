@@ -21,6 +21,7 @@ var (
 	falsePositive float64
 	returnSeen    bool
 	concurrency   int
+	noGzip        bool
 )
 
 func init() {
@@ -31,6 +32,7 @@ func init() {
 	flag.Float64Var(&falsePositive, "p", 0.01, "False positive probability")
 	flag.BoolVar(&returnSeen, "seen", false, "Return only seen items (default: return new items)")
 	flag.IntVar(&concurrency, "concurrency", runtime.NumCPU(), "Number of concurrent workers")
+	flag.BoolVar(&noGzip, "no-gzip", false, "Disable gzip compression for state file")
 	flag.Usage = func() {
 		fmt.Fprintf(flag.CommandLine.Output(),
 			`Efficient command-line deduplication tool that uses a Bloom filter for high-performance duplicate detection in large datasets or streams.
@@ -45,8 +47,6 @@ Options:
   -p             False positive probability (default: 0.01)
   -seen          Return only seen items (default: return new items)
   -concurrency   Number of concurrent workers (default: number of CPUs)
-  -h, -?         Show this help and exit
-  --help         Show this help and exit
 
 Examples:
   cat data.txt | %[1]s -n 10000 -p 0.001 > deduped.txt
@@ -109,14 +109,18 @@ func loadBloomFilter() bbloom.Bloom {
 	}
 	defer file.Close()
 
-	gz, err := gzip.NewReader(file)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating gzip reader: %v\n", err)
-		os.Exit(1)
+	var reader io.Reader = file
+	if !noGzip {
+		gz, err := gzip.NewReader(file)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error creating gzip reader: %v\n", err)
+			os.Exit(1)
+		}
+		defer gz.Close()
+		reader = gz
 	}
-	defer gz.Close()
 
-	bf, err := bbloom.BinaryUnmarshal(gz)
+	bf, err := bbloom.BinaryUnmarshal(reader)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error reading or decoding state file: %v\n", err)
 		os.Exit(1)
@@ -133,10 +137,14 @@ func saveBloomFilter(bf bbloom.Bloom) {
 	}
 	defer file.Close()
 
-	gz := gzip.NewWriter(file)
-	defer gz.Close()
+	var writer io.Writer = file
+	if !noGzip {
+		gz := gzip.NewWriter(file)
+		defer gz.Close()
+		writer = gz
+	}
 
-	if err := bf.BinaryMarshal(gz); err != nil {
+	if err := bf.BinaryMarshal(writer); err != nil {
 		fmt.Fprintf(os.Stderr, "Error writing state file: %v\n", err)
 	}
 }
