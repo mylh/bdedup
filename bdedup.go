@@ -10,7 +10,7 @@ import (
 	"runtime"
 	"sync"
 
-	"github.com/AndreasBriese/bbloom"
+	"github.com/mylh/bdedup/bbloom" // Import the bbloom package for Bloom filter functionality
 )
 
 var (
@@ -57,17 +57,15 @@ Examples:
 }
 
 func main() {
-	// Support -?, -h, --help flags
-	// for _, arg := range os.Args[1:] {
-	// 	if arg == "-?" || arg == "-h" || arg == "--help" {
-	// 		flag.Usage()
-	// 		return
-	// 	}
-	// }
 	flag.Parse()
 
+	hasNewItems := false
 	bf := loadBloomFilter()
-	defer saveBloomFilter(bf)
+	defer func() {
+		if hasNewItems {
+			saveBloomFilter(bf)
+		}
+	}()
 
 	var input io.Reader = os.Stdin
 	var output io.Writer = os.Stdout
@@ -93,9 +91,9 @@ func main() {
 	}
 
 	if inputFile != "" {
-		processInParallel(input, output, &bf)
+		processInParallel(input, output, &bf, &hasNewItems)
 	} else {
-		processStream(input, output, &bf)
+		processStream(input, output, &bf, &hasNewItems)
 	}
 }
 
@@ -118,13 +116,13 @@ func loadBloomFilter() bbloom.Bloom {
 	}
 	defer gz.Close()
 
-	data, err := io.ReadAll(gz)
+	bf, err := bbloom.BinaryUnmarshal(gz)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error reading state file: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Error reading or decoding state file: %v\n", err)
 		os.Exit(1)
 	}
 
-	return bbloom.JSONUnmarshal(data)
+	return bf
 }
 
 func saveBloomFilter(bf bbloom.Bloom) {
@@ -138,31 +136,34 @@ func saveBloomFilter(bf bbloom.Bloom) {
 	gz := gzip.NewWriter(file)
 	defer gz.Close()
 
-	data := bf.JSONMarshal()
-	if _, err := gz.Write(data); err != nil {
+	if err := bf.BinaryMarshal(gz); err != nil {
 		fmt.Fprintf(os.Stderr, "Error writing state file: %v\n", err)
 	}
 }
 
-func processStream(input io.Reader, output io.Writer, bf *bbloom.Bloom) {
+func processStream(input io.Reader, output io.Writer, bf *bbloom.Bloom, hasNewItems *bool) {
 	scanner := bufio.NewScanner(input)
 	for scanner.Scan() {
 		line := scanner.Bytes()
-		if returnSeen == bf.Has(line) {
+		hasNew := !bf.Has(line)
+		if returnSeen != hasNew {
 			fmt.Fprintln(output, scanner.Text())
 		}
-		bf.Add(line)
+		if hasNew {
+			*hasNewItems = true
+			bf.Add(line)
+		}
 	}
 }
 
-func processInParallel(input io.Reader, output io.Writer, bf *bbloom.Bloom) {
+func processInParallel(input io.Reader, output io.Writer, bf *bbloom.Bloom, hasNewItems *bool) {
 	var wg sync.WaitGroup
 	lines := make(chan string)
 	results := make(chan string)
 
 	for i := 0; i < concurrency; i++ {
 		wg.Add(1)
-		go worker(&wg, lines, results, bf)
+		go worker(&wg, lines, results, bf, hasNewItems)
 	}
 
 	go func() {
@@ -183,12 +184,16 @@ func processInParallel(input io.Reader, output io.Writer, bf *bbloom.Bloom) {
 	}
 }
 
-func worker(wg *sync.WaitGroup, lines <-chan string, results chan<- string, bf *bbloom.Bloom) {
+func worker(wg *sync.WaitGroup, lines <-chan string, results chan<- string, bf *bbloom.Bloom, hasNewItems *bool) {
 	defer wg.Done()
 	for line := range lines {
-		if returnSeen == bf.HasTS([]byte(line)) {
+		hasNew := !bf.HasTS([]byte(line))
+		if returnSeen != hasNew {
 			results <- line
 		}
-		bf.AddTS([]byte(line))
+		if hasNew {
+			*hasNewItems = true
+			bf.AddTS([]byte(line))
+		}
 	}
 }
