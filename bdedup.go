@@ -47,6 +47,7 @@ Options:
   -p             False positive probability (default: 0.01)
   -seen          Return only seen items (default: return new items)
   -concurrency   Number of concurrent workers (default: number of CPUs)
+  -no-gzip       Disable gzip compression for state file (default: false)
 
 Examples:
   cat data.txt | %[1]s -n 10000 -p 0.001 > deduped.txt
