@@ -28,16 +28,17 @@ bdedup [options]
 
 ### Options
 
-| Option        | Description                                                                 |
-|---------------|-----------------------------------------------------------------------------|
-| `-input`      | Input file (default: stdin)                                                 |
-| `-output`     | Output file (default: stdout)                                               |
-| `-state`      | Bloom filter state file (default: bloom.gz)                                 |
-| `-n`          | Expected number of distinct values (default: 1000000)                       |
-| `-p`          | False positive probability (default: 0.01, i.e., 1%)                        |
-| `-seen`       | Output only previously seen items (default: output only new items)          |
-| `-concurrency`| Number of workers when processing files (default: number of CPU cores)      |
-| `-h, -?, --help` | Show help and usage information                                          |
+| Option         | Description                                                            |
+|----------------|------------------------------------------------------------------------|
+| `-input`       | Input file (default: stdin)                                            |
+| `-output`      | Output file (default: stdout)                                          |
+| `-state`       | Bloom filter state file (default: bloom.gz)                            |
+| `-n`           | Expected number of distinct values (default: 1000000)                  |
+| `-p`           | False positive probability (default: 0.01, i.e., 1%)                   |
+| `-seen`        | Output only previously seen items (default: output only new items)     |
+| `-concurrency` | Number of workers when processing files (default: number of CPU cores) |
+| `-no-gzip`     | Do not gzip saved bloom filter state (saves time on large filters)     |
+
 
 ---
 
